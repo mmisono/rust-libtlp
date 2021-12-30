@@ -8,4 +8,3 @@ pub mod pci;
 mod error;
 mod nettlp;
 mod tlp;
-mod util;
