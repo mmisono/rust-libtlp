@@ -1,7 +1,4 @@
-//! rust-libtlp
-//!
-//! This is rust version of [LibTLP](https://github.com/NetTLP/libtlp/).
-
+#![doc = include_str!("../README.md")]
 #![warn(rust_2018_idioms)]
 
 pub use crate::error::{Error, ErrorKind};
