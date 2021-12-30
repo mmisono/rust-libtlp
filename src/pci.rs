@@ -1,4 +1,4 @@
-use crate::error::{Error, ErrorKind};
+use crate::error::Error;
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -37,7 +37,7 @@ impl FromStr for Bdf {
                 device: u8::from_str_radix(caps.get(2).unwrap().as_str(), 16).unwrap(),
                 func: u8::from_str_radix(caps.get(3).unwrap().as_str(), 16).unwrap(),
             })
-            .ok_or_else(|| Error::new(ErrorKind::InvalidBDF(s.to_string())))
+            .ok_or_else(|| Error::InvalidBDF(s.to_string()))
     }
 }
 
