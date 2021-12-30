@@ -260,13 +260,14 @@ impl From<u16> for CplStatus {
     }
 }
 
-const CPL_FMT_TYPE: u8 = 0b0100_1010;
-const CPL_LENGTH_MASK: u16 = 0x03FF;
-const CPL_COUNT_MASK: u16 = 0x0FFF;
-const CPL_STATUS_MASK: u16 = 0xE000;
 impl TlpCplHdr {
+    const CPL_FMT_TYPE: u8 = 0b0100_1010;
+    const CPL_LENGTH_MASK: u16 = 0x03FF;
+    const CPL_COUNT_MASK: u16 = 0x0FFF;
+    const CPL_STATUS_MASK: u16 = 0xE000;
+
     pub(crate) fn is_valid_fmt_type(&self) -> bool {
-        self.fmt_type == CPL_FMT_TYPE
+        self.fmt_type == TlpCplHdr::CPL_FMT_TYPE
     }
 
     pub(crate) fn is_valid_status(&self) -> bool {
@@ -278,15 +279,15 @@ impl TlpCplHdr {
     }
 
     pub(crate) fn status(&self) -> CplStatus {
-        CplStatus::from(self.stcnt.to_be() & CPL_STATUS_MASK)
+        CplStatus::from(self.stcnt.to_be() & TlpCplHdr::CPL_STATUS_MASK)
     }
 
     pub(crate) fn length(&self) -> u16 {
-        self.falen.to_be() & CPL_LENGTH_MASK
+        self.falen.to_be() & TlpCplHdr::CPL_LENGTH_MASK
     }
 
     pub(crate) fn count(&self) -> u16 {
-        self.stcnt.to_be() & CPL_COUNT_MASK
+        self.stcnt.to_be() & TlpCplHdr::CPL_COUNT_MASK
     }
 }
 

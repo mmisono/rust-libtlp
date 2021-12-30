@@ -5,17 +5,6 @@ use crate::tlp;
 use std::net::Ipv4Addr;
 use std::net::UdpSocket;
 
-/* TODO: implement
-/// Port for messaging API
-const NETTLP_MSG_PORT: u16 = 0x2FFF; // 12287
-*/
-/// Base port for DmaIssuedByLibTLP mode
-const NETTLP_LIBTLP_PORT_BASE: u16 = 0x3000;
-/// Base port for DmaIssuedByAdapter mode
-const NETTLP_ADAPTER_PORT_BASE: u16 = 0x4000;
-/// The timeout value of receiving completion TLPs
-const LIBTLP_CPL_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
-
 #[repr(packed)]
 #[derive(Clone, Copy, Debug)]
 struct NetTlpHdr {
@@ -55,6 +44,17 @@ pub struct NetTlp {
 }
 
 impl NetTlp {
+    /* TODO: implement
+    /// Port for messaging API
+    const NETTLP_MSG_PORT: u16 = 0x2FFF; // 12287
+    */
+    /// Base port for DmaIssuedByLibTLP mode
+    const NETTLP_LIBTLP_PORT_BASE: u16 = 0x3000;
+    /// Base port for DmaIssuedByAdapter mode
+    const NETTLP_ADAPTER_PORT_BASE: u16 = 0x4000;
+    /// The timeout value of receiving completion TLPs
+    const LIBTLP_CPL_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
+
     pub fn new(
         bdf: pci::Bdf,
         local_addr: Ipv4Addr,
@@ -65,11 +65,13 @@ impl NetTlp {
     ) -> Result<Self, Error> {
         let requester = bdf;
         let port = match dir {
-            DmaDirection::DmaIssuedByLibTLP => NETTLP_LIBTLP_PORT_BASE + (tag as u16),
-            DmaDirection::DmaIssuedByAdapter => NETTLP_ADAPTER_PORT_BASE + ((tag & 0x0F) as u16),
+            DmaDirection::DmaIssuedByLibTLP => NetTlp::NETTLP_LIBTLP_PORT_BASE + (tag as u16),
+            DmaDirection::DmaIssuedByAdapter => {
+                NetTlp::NETTLP_ADAPTER_PORT_BASE + ((tag & 0x0F) as u16)
+            }
         };
         let socket = UdpSocket::bind((local_addr, port))?;
-        socket.set_read_timeout(Some(LIBTLP_CPL_TIMEOUT))?;
+        socket.set_read_timeout(Some(NetTlp::LIBTLP_CPL_TIMEOUT))?;
         socket.connect((remote_addr, port))?;
         Ok(NetTlp {
             remote_addr,
