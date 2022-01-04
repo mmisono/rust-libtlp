@@ -16,3 +16,8 @@ anyhow = "1.0"
 paste = "1.0"
 structopt = "0.3"
 parse_int = "0.6.0"
+
+[profile.release]
+debug = 1
+incremental = true
+lto = "fat"
