@@ -151,13 +151,31 @@ impl NetTlp {
 
             let offset = (cpld.lowaddr & 0x3) as usize;
             let start = nh_size + cpl_size + offset;
-            let end = start + (cpld.length() * 4) as usize - ((4 - offset) % 4);
+            let end = if cpld.count() <= cpld.length() * 4 {
+                start + (cpld.count() as usize)
+            } else {
+                start + (cpld.length() as usize) * 4 - offset
+            };
             let size = end - start;
             let buf_start = received;
             let buf_end = received + size;
             let buf_len = buf[buf_start..].len();
             if size > buf_len {
-                dbg!("buf is too small!", size, buf_len);
+                // BUG: should not happen
+                dbg!(
+                    "buf is too small!",
+                    offset,
+                    start,
+                    end,
+                    size,
+                    buf_start,
+                    buf_end,
+                    buf_len,
+                    received,
+                    cpld.length(),
+                    cpld.count(),
+                    cpld,
+                );
                 return invdataerr;
             }
             let tmp = &recv_buf[start..end];
