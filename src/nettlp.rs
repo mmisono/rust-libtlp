@@ -5,6 +5,8 @@ use crate::tlp;
 use std::net::Ipv4Addr;
 use std::net::UdpSocket;
 
+const EAGAIN: i32 = 11;
+
 #[repr(packed)]
 #[derive(Clone, Copy, Debug)]
 struct NetTlpHdr {
@@ -136,7 +138,13 @@ impl NetTlp {
         )));
         let mut received = 0;
         loop {
-            let n = self.socket.recv(&mut recv_buf)?;
+            let n = self.socket.recv(&mut recv_buf).map_err(|e| {
+                if errno::errno().0 == EAGAIN {
+                    Error::Timeout
+                } else {
+                    Error::from(e)
+                }
+            })?;
 
             if n < nh_size + cpl_size {
                 return invdataerr;
