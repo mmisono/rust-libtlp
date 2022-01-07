@@ -158,6 +158,7 @@ impl NetTlp {
     }
 
     // Receive completion with data TLP(s)
+    // It is possible to get several completion TLPs for one request
     fn recv_cpld(&self, buf: &mut [u8]) -> Result<(), Error> {
         let nh_size = std::mem::size_of::<NetTlpHdr>();
         let cpl_size = std::mem::size_of::<tlp::TlpCplHdr>();
@@ -208,9 +209,8 @@ impl NetTlp {
             let buf_end = received + size;
             let buf_len = buf[buf_start..].len();
             if size > buf_len {
-                // BUG: should not happen
                 dbg!(
-                    "buf is too small!",
+                    "BUG: buf is too small!",
                     offset,
                     start,
                     end,

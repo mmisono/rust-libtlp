@@ -137,6 +137,7 @@ pub(crate) enum TlpType {
     /// Memory Read
     Mrd,
     /// Memory Write
+    #[allow(dead_code)]
     Mwr,
     _Unknown,
 }
