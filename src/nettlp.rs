@@ -40,7 +40,7 @@ pub struct NetTlp {
     pub local_addr: Ipv4Addr,
     pub requester: pci::Bdf,
     pub tag: u8,
-    pub mrrs: u32,
+    pub mrrs: usize,
     pub dir: DmaDirection,
     pub socket: UdpSocket,
 }
@@ -62,7 +62,7 @@ impl NetTlp {
         local_addr: Ipv4Addr,
         remote_addr: Ipv4Addr,
         tag: u8,
-        mrrs: u32,
+        mrrs: usize,
         dir: DmaDirection,
     ) -> Result<Self, Error> {
         let requester = bdf;
@@ -86,18 +86,57 @@ impl NetTlp {
         })
     }
 
-    /// DMA read
+    /// Read `buf.len()` bytes from a physical addr
+    ///
+    /// Several read requests are made when:
+    ///   1. Read size is larger than MRRS
+    ///   2. A request crosses 4k boundary
     // TODO: zero-copy
     pub fn dma_read(&self, addr: u64, buf: &mut [u8]) -> Result<(), Error> {
         if buf.is_empty() {
             return Ok(());
         }
-        self.send_mr(addr, buf)?;
+        let mut p = addr;
+        let mut received = 0;
+        loop {
+            let start = received;
+            let remain = buf[start..].len();
+            let mut len = if remain > self.mrrs {
+                self.mrrs
+            } else {
+                remain
+            };
+            // split requests if it crosses 4k boundary
+            if (p & !0xFFF) != ((p + len as u64) & !0xFFF) {
+                len = 0x1000 - (p & 0xFFF) as usize;
+            }
+            let end = start + len;
+
+            self.send_mr(p, len)?;
+            self.recv_cpld(&mut buf[start..end])?;
+            received += len;
+            p += len as u64;
+            if received >= buf.len() {
+                break;
+            }
+        }
+        assert!(received == buf.len());
+
+        Ok(())
+    }
+
+    // This function does not consider MRRS and boundary
+    // Just for an experiment purpose
+    pub fn _dma_read_vanilla(&self, addr: u64, buf: &mut [u8]) -> Result<(), Error> {
+        if buf.is_empty() {
+            return Ok(());
+        }
+        self.send_mr(addr, buf.len())?;
         self.recv_cpld(buf)
     }
 
     // Send a memory read request TLP with a nettlp header
-    fn send_mr(&self, addr: u64, buf: &mut [u8]) -> Result<(), Error> {
+    fn send_mr(&self, addr: u64, len: usize) -> Result<(), Error> {
         let nh = NetTlpHdr::new();
         let t = tlp::TlpType::Mrd;
         let mut packet = bytes::BytesMut::new();
@@ -107,10 +146,10 @@ impl NetTlp {
 
         // Separte function calls are necessary to expolit generics
         if addr <= u32::MAX as u64 {
-            let mh = tlp::TlpMrHdr::new(t, self.requester, self.tag, addr as u32, buf.len());
+            let mh = tlp::TlpMrHdr::new(t, self.requester, self.tag, addr as u32, len);
             packet.extend_from_slice(unsafe { as_u8_slice(&mh) });
         } else {
-            let mh = tlp::TlpMrHdr::new(t, self.requester, self.tag, addr, buf.len());
+            let mh = tlp::TlpMrHdr::new(t, self.requester, self.tag, addr, len);
             packet.extend_from_slice(unsafe { as_u8_slice(&mh) });
         };
 

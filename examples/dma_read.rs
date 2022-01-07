@@ -41,7 +41,7 @@ struct Opt {
 
     /// MaxReadRequestSize
     #[structopt(short = "m", long = "mrrs", default_value = "512")]
-    mrrs: u32,
+    mrrs: usize,
 }
 
 fn main() -> Result<()> {
