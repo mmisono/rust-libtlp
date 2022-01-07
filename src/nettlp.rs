@@ -110,15 +110,9 @@ impl NetTlp {
         loop {
             let start = received;
             let remain = buf[start..].len();
-            let mut len = if remain > self.mrrs {
-                self.mrrs
-            } else {
-                remain
-            };
-            // split requests if it crosses 4k boundary
-            if (p & !0xFFF) != ((p + len as u64) & !0xFFF) {
-                len = 0x1000 - (p & 0xFFF) as usize;
-            }
+            let max_len = 0x1000 - (p & 0xFFF) as usize;
+            use std::cmp::min;
+            let len = min(min(remain, self.mrrs), max_len);
             let end = start + len;
 
             self.send_mr(p, len)?;
