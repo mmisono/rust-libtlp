@@ -86,6 +86,15 @@ impl NetTlp {
         })
     }
 
+    /// Read `sizeof(T)` bytes into `t` from a physical addr
+    ///
+    /// # Safety
+    ///
+    /// This function should not be called with an unpacked type
+    pub unsafe fn dma_read_t<T: Sized>(&self, addr: u64, t: &mut T) -> Result<(), Error> {
+        self.dma_read(addr, as_u8_mut_slice(t))
+    }
+
     /// Read `buf.len()` bytes from a physical addr
     ///
     /// Several read requests are made when:
@@ -246,6 +255,10 @@ impl NetTlp {
 
 unsafe fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     std::slice::from_raw_parts((p as *const T) as *const u8, std::mem::size_of::<T>())
+}
+
+unsafe fn as_u8_mut_slice<T: Sized>(p: &mut T) -> &mut [u8] {
+    std::slice::from_raw_parts_mut((p as *mut T) as *mut u8, std::mem::size_of::<T>())
 }
 
 // for debug
