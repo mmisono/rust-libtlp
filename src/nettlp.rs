@@ -5,10 +5,14 @@ use crate::tlp;
 use std::net::Ipv4Addr;
 use std::net::UdpSocket;
 
+use bytes::buf::UninitSlice;
+use bytes::BufMut;
+use zerocopy::{AsBytes, FromBytes};
+
 const EAGAIN: i32 = 11;
 
 #[repr(packed)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, AsBytes)]
 struct NetTlpHdr {
     // NOTE: The header contants are not used for now
     /// Sequence number
@@ -87,55 +91,55 @@ impl NetTlp {
     }
 
     /// Read `sizeof(T)` bytes into `t` from a physical addr
-    ///
-    /// # Safety
-    ///
-    /// This function should not be called with an unpacked type
-    pub unsafe fn dma_read_t<T: Sized>(&self, addr: u64, t: &mut T) -> Result<(), Error> {
-        self.dma_read(addr, as_u8_mut_slice(t))
+    // FIXME: Remove AsBytes trait bound.
+    // We should create BytesMut with UninitSlice(*) instead of creating u8 slice.
+    // but there is no BytesMut::from(UninitSlice) for now..
+    // (* This is because a padding of a unpacked struct may be uninitialized.)
+    pub fn dma_read_t<T: Sized + FromBytes + AsBytes>(
+        &self,
+        addr: u64,
+        t: &mut T,
+    ) -> Result<(), Error> {
+        let ptr = (t as *mut T) as *mut u8;
+        let len = std::mem::size_of::<T>();
+        let mut slice = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
+        self.dma_read(addr, &mut slice, len)?;
+        Ok(())
     }
 
-    /// Read `buf.len()` bytes from a physical addr
+    /// Read `len` bytes from a physical address `addr` into `buf`
     ///
     /// Several read requests are made when:
     ///   1. Read size is larger than MRRS
     ///   2. A request crosses 4k boundary
-    // TODO: zero-copy
-    pub fn dma_read(&self, addr: u64, buf: &mut [u8]) -> Result<(), Error> {
-        if buf.is_empty() {
-            return Ok(());
-        }
+    // There is no BufMut::len(), and BufMut::remaining_mut() is not the buffer length.
+    // It is the length that can be written from the current position.
+    // For Vec<u8>, BufMut::remaining_mut() is isize::MAX - buf.len().
+    // Therefore the function takes `len` as an additional argument.
+    pub fn dma_read<T: BufMut>(&self, addr: u64, buf: &mut T, len: usize) -> Result<(), Error> {
+        assert!(len <= buf.remaining_mut());
+        let total_len = len;
         let mut p = addr;
         let mut received = 0;
         loop {
-            let start = received;
-            let remain = buf[start..].len();
+            let remain = total_len - received;
             let max_len = 0x1000 - (p & 0xFFF) as usize;
+            let chunk_len = buf.chunk_mut().len();
             use std::cmp::min;
-            let len = min(min(remain, self.mrrs), max_len);
-            let end = start + len;
+            let len = min(min(min(remain, self.mrrs), max_len), chunk_len);
 
             self.send_mr(p, len)?;
-            self.recv_cpld(&mut buf[start..end])?;
+            self.recv_cpld(&mut buf.chunk_mut()[..len])?;
             received += len;
             p += len as u64;
-            if received >= buf.len() {
+            unsafe {
+                buf.advance_mut(len);
+            }
+            if received == total_len {
                 break;
             }
         }
-        assert!(received == buf.len());
-
         Ok(())
-    }
-
-    // This function does not consider MRRS and boundary
-    // Just for an experiment purpose
-    pub fn _dma_read_vanilla(&self, addr: u64, buf: &mut [u8]) -> Result<(), Error> {
-        if buf.is_empty() {
-            return Ok(());
-        }
-        self.send_mr(addr, buf.len())?;
-        self.recv_cpld(buf)
     }
 
     // Send a memory read request TLP with a nettlp header
@@ -144,16 +148,15 @@ impl NetTlp {
         let t = tlp::TlpType::Mrd;
         let mut packet = bytes::BytesMut::new();
 
-        // It is safe to convert a packed struct to u8 slice
-        packet.extend_from_slice(unsafe { as_u8_slice(&nh) });
+        packet.extend_from_slice(nh.as_bytes());
 
         // Separte function calls are necessary to expolit generics
         if addr <= u32::MAX as u64 {
             let mh = tlp::TlpMrHdr::new(t, self.requester, self.tag, addr as u32, len);
-            packet.extend_from_slice(unsafe { as_u8_slice(&mh) });
+            packet.extend_from_slice(mh.as_bytes());
         } else {
             let mh = tlp::TlpMrHdr::new(t, self.requester, self.tag, addr, len);
-            packet.extend_from_slice(unsafe { as_u8_slice(&mh) });
+            packet.extend_from_slice(mh.as_bytes());
         };
 
         self.socket.send(&packet)?;
@@ -161,8 +164,9 @@ impl NetTlp {
     }
 
     // Receive completion with data TLP(s)
-    // It is possible to get several completion TLPs for one request
-    fn recv_cpld(&self, buf: &mut [u8]) -> Result<(), Error> {
+    // Note: It is possible to get several completion TLPs for one request
+    // TODO: zero-copy
+    fn recv_cpld(&self, buf: &mut UninitSlice) -> Result<(), Error> {
         let nh_size = std::mem::size_of::<NetTlpHdr>();
         let cpl_size = std::mem::size_of::<tlp::TlpCplHdr>();
         // Extra bytes are for non DW-aligned data
@@ -211,23 +215,16 @@ impl NetTlp {
             let buf_start = received;
             let buf_end = received + size;
             let buf_len = buf[buf_start..].len();
-            if size > buf_len {
-                dbg!(
-                    "BUG: buf is too small!",
-                    offset,
-                    start,
-                    end,
-                    size,
-                    buf_start,
-                    buf_end,
-                    buf_len,
-                    received,
-                    cpld.length(),
-                    cpld.count(),
-                    cpld,
-                );
+
+            if size > (n - (nh_size + cpl_size)) {
+                dbg!("Corrupted TLP?", n, nh_size, cpl_size, size, cpld);
                 return invdataerr;
             }
+            if size > buf_len {
+                dbg!("BUG: buf is too small", size, buf_len, cpld);
+                return invdataerr;
+            }
+
             let tmp = &recv_buf[start..end];
             buf[buf_start..buf_end].copy_from_slice(&recv_buf[start..end]);
             received += tmp.len();
@@ -245,14 +242,6 @@ impl NetTlp {
         unimplemented!();
     }
     */
-}
-
-unsafe fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
-    std::slice::from_raw_parts((p as *const T) as *const u8, std::mem::size_of::<T>())
-}
-
-unsafe fn as_u8_mut_slice<T: Sized>(p: &mut T) -> &mut [u8] {
-    std::slice::from_raw_parts_mut((p as *mut T) as *mut u8, std::mem::size_of::<T>())
 }
 
 // for debug

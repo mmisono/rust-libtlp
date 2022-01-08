@@ -5,6 +5,7 @@ use libtlp::{pci, DmaDirection, NetTlp};
 use std::net::Ipv4Addr;
 
 use anyhow::Result;
+use bytes::BytesMut;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -53,10 +54,12 @@ fn main() -> Result<()> {
         args.mrrs,
         dir,
     )?;
+    dbg!(&args);
     dbg!(&nettlp);
 
-    let mut buf = vec![0; args.size];
-    nettlp.dma_read(args.addr, &mut buf)?;
+    let mut buf = BytesMut::with_capacity(args.size);
+    nettlp.dma_read(args.addr, &mut buf, args.size)?;
+    let buf = buf.freeze();
     dbg!(&buf);
 
     Ok(())

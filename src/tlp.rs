@@ -1,5 +1,7 @@
 use crate::pci;
 
+use zerocopy::AsBytes;
+
 // Some traits definitions for using u32 and u64 in generics
 
 pub trait ToBe {
@@ -110,7 +112,7 @@ impl MaxValue for u64 {
 // NOTE: For addresses below 4 GB, requesters must use the 32-bit format.
 #[repr(packed)]
 #[allow(dead_code)]
-pub(crate) struct TlpMrHdr<T: ToBe + To64 + AlignDW + MaxValue> {
+pub(crate) struct TlpMrHdr<T: ToBe + To64 + AlignDW + MaxValue + AsBytes> {
     // 1st DW
     /// Format and Type
     fmt_type: u8,
@@ -190,7 +192,7 @@ pub(crate) struct TlpCplHdr {
     pub lowaddr: u8,
 }
 
-impl<T: ToBe + To64 + AlignDW + MaxValue> TlpMrHdr<T> {
+impl<T: ToBe + To64 + AlignDW + MaxValue + AsBytes> TlpMrHdr<T> {
     /// Create message request TLP
     pub(crate) fn new(
         tlp_type: TlpType,
@@ -237,6 +239,14 @@ impl<T: ToBe + To64 + AlignDW + MaxValue> TlpMrHdr<T> {
             dw: dw.to_be(),
             addr: addr.align_dw().to_be(),
         }
+    }
+
+    // #[derive(AsBytes)] does not support on types with type parameters,
+    // so manually implementing it.
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        let ptr = self as *const Self as *const _;
+        let len = std::mem::size_of::<Self>();
+        unsafe { std::slice::from_raw_parts(ptr, len) }
     }
 }
 
