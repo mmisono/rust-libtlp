@@ -171,23 +171,23 @@ pub(crate) enum TlpType {
 pub(crate) struct TlpCplHdr {
     // 1st DW
     /// Format and Type
-    fmt_type: u8,
+    pub fmt_type: u8,
     /// Trafic Class
-    tclass: u8,
+    pub tclass: u8,
     /// Flag, Attr, Reserved, Length
-    falen: u16,
+    pub falen: u16,
 
     // 2nd DW
     /// Completer ID
-    completer: u16,
+    pub completer: u16,
     /// Status & Byte count
-    stcnt: u16,
+    pub stcnt: u16,
 
     // 3rd DW
     /// Requester ID
-    requester: u16,
+    pub requester: u16,
     /// Tag
-    tag: u8,
+    pub tag: u8,
     /// Low address
     pub lowaddr: u8,
 }
@@ -272,13 +272,18 @@ impl From<u16> for CplStatus {
 }
 
 impl TlpCplHdr {
-    const CPL_FMT_TYPE: u8 = 0b0100_1010;
+    const CPL_FMT_TYPE_CPL: u8 = 0b0000_1010;
+    const CPL_FMT_TYPE_CPL_WITH_DATA: u8 = 0b0100_1010;
     const CPL_LENGTH_MASK: u16 = 0x03FF;
     const CPL_COUNT_MASK: u16 = 0x0FFF;
     const CPL_STATUS_MASK: u16 = 0xE000;
 
-    pub(crate) fn is_valid_fmt_type(&self) -> bool {
-        self.fmt_type == TlpCplHdr::CPL_FMT_TYPE
+    pub(crate) fn is_completion_with_data(&self) -> bool {
+        self.fmt_type == TlpCplHdr::CPL_FMT_TYPE_CPL_WITH_DATA
+    }
+
+    pub(crate) fn is_completion(&self) -> bool {
+        self.fmt_type == TlpCplHdr::CPL_FMT_TYPE_CPL
     }
 
     pub(crate) fn is_valid_status(&self) -> bool {

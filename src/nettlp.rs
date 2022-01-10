@@ -129,7 +129,7 @@ impl NetTlp {
             let len = min(min(min(remain, self.mrrs), max_len), chunk_len);
 
             self.send_mr(p, len)?;
-            self.recv_cpld(&mut buf.chunk_mut()[..len])?;
+            self.recv_cpld(p, &mut buf.chunk_mut()[..len])?;
             received += len;
             p += len as u64;
             unsafe {
@@ -166,7 +166,7 @@ impl NetTlp {
     // Receive completion with data TLP(s)
     // Note: It is possible to get several completion TLPs for one request
     // TODO: zero-copy
-    fn recv_cpld(&self, buf: &mut UninitSlice) -> Result<(), Error> {
+    fn recv_cpld(&self, addr: u64, buf: &mut UninitSlice) -> Result<(), Error> {
         let nh_size = std::mem::size_of::<NetTlpHdr>();
         let cpl_size = std::mem::size_of::<tlp::TlpCplHdr>();
         // Extra bytes are for non DW-aligned data
@@ -180,9 +180,6 @@ impl NetTlp {
         let etra_bytes = 6; // just enough size
         let bufsize = nh_size + cpl_size + buf.len() + etra_bytes;
         let mut recv_buf = vec![0; bufsize];
-        let invdataerr = Err(Error::from(std::io::Error::from(
-            std::io::ErrorKind::InvalidData,
-        )));
         let mut received = 0;
         loop {
             let n = self.socket.recv(&mut recv_buf).map_err(|e| {
@@ -194,14 +191,31 @@ impl NetTlp {
             })?;
 
             if n < nh_size + cpl_size {
-                return invdataerr;
+                return Err(Error::InvalidData(format!(
+                    "Datagram size is less than TLP header size: {} < {}",
+                    n,
+                    nh_size + cpl_size
+                )));
             }
 
             let cpld: tlp::TlpCplHdr =
                 unsafe { std::ptr::read(recv_buf.as_ptr().add(nh_size) as *const _) };
 
-            if !cpld.is_valid_fmt_type() || !cpld.is_valid_status() {
-                return invdataerr;
+            if !cpld.is_completion_with_data() {
+                if cpld.is_completion() {
+                    return Err(Error::InvalidAddress(addr));
+                } else {
+                    return Err(Error::InvalidData(format!(
+                        "Invalid format type: {:#010b}",
+                        cpld.fmt_type
+                    )));
+                };
+            }
+            if !cpld.is_valid_status() {
+                return Err(Error::InvalidData(format!(
+                    "Invalid status: {:#b}",
+                    cpld.stcnt.to_be()
+                )));
             }
 
             let offset = (cpld.lowaddr & 0x3) as usize;
@@ -218,11 +232,15 @@ impl NetTlp {
 
             if size > (n - (nh_size + cpl_size)) {
                 dbg!("Corrupted TLP?", n, nh_size, cpl_size, size, cpld);
-                return invdataerr;
+                return Err(Error::InvalidData(format!(
+                    "TLP payload size is larger than the actual packet size: {} > {}",
+                    size,
+                    (n - (nh_size + cpl_size))
+                )));
             }
             if size > buf_len {
                 dbg!("BUG: buf is too small", size, buf_len, cpld);
-                return invdataerr;
+                return Err(Error::InvalidData(format!("Internal error")));
             }
 
             let tmp = &recv_buf[start..end];
