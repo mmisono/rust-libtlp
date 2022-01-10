@@ -32,7 +32,7 @@ impl NetTlpHdr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum DmaDirection {
     DmaIssuedByLibTLP,
     DmaIssuedByAdapter,
