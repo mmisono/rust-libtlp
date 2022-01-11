@@ -247,8 +247,8 @@ fn benchmark(args: &Args) -> Result<()> {
     for n in 0..args.nthreads {
         let cpu = n;
         let tag = n;
-        let region_addr = args.region_addr;
-        let region_size = args.region_size;
+        let region_size = args.region_size / (args.nthreads as usize);
+        let region_addr = args.region_addr + (region_size * n as usize) as u64;
         let dir = DmaDirection::DmaIssuedByLibTLP;
         let ntrans = Arc::new(AtomicU64::new(0));
         let ntrans_clone = Arc::clone(&ntrans);
