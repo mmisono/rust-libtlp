@@ -143,13 +143,13 @@ fn bench_thread(nettlp: NetTlp, param: ThreadParam) {
     let cores = [param.cpu as usize];
     affinity::set_thread_affinity(&cores).unwrap();
 
-    let len = std::cmp::min(param.dma_len, param.mrrs);
     let mut count = 0;
+    let len = param.dma_len;
     let mut buf = bytes::BytesMut::with_capacity(len);
     let mut addr = param.region_addr;
 
     println!(
-        "start on cpu {}, address {:#x}, size {}, len {}, mrrs {}",
+        "start on cpu {}, address {:#x}, size {}, dma_len {}, mrrs {}",
         param.cpu, param.region_addr, param.region_size, len, param.mrrs
     );
 
