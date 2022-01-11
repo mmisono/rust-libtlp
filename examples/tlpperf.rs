@@ -145,7 +145,7 @@ fn bench_thread(nettlp: NetTlp, param: ThreadParam) {
 
     let len = std::cmp::min(param.dma_len, param.mrrs);
     let mut count = 0;
-    let mut buf = vec![0u8; len];
+    let mut buf = bytes::BytesMut::with_capacity(len);
     let mut addr = param.region_addr;
 
     println!(
@@ -157,6 +157,8 @@ fn bench_thread(nettlp: NetTlp, param: ThreadParam) {
         if !RUNNING.load(Ordering::SeqCst) {
             break;
         }
+
+        buf.clear();
 
         if param.latency {
             let now = std::time::SystemTime::now();
