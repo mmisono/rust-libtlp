@@ -128,7 +128,7 @@ impl NetTlp {
             use std::cmp::min;
             let len = min(min(min(remain, self.mrrs), max_len), chunk_len);
 
-            self.send_mr(p, len)?;
+            self.send_mrd(p, len)?;
             self.recv_cpld(p, &mut buf.chunk_mut()[..len])?;
             received += len;
             p += len as u64;
@@ -142,14 +142,29 @@ impl NetTlp {
         Ok(())
     }
 
-    // Send a memory read request TLP with a nettlp header
-    fn send_mr(&self, addr: u64, len: usize) -> Result<(), Error> {
+    fn send_mrd(&self, addr: u64, len: usize) -> Result<(), Error> {
+        self.send_mr(addr, len, tlp::TlpType::Mrd, None)
+    }
+
+    fn send_mwr(&self, addr: u64, len: usize, data: &[u8]) -> Result<(), Error> {
+        self.send_mr(addr, len, tlp::TlpType::Mwr, Some(data))
+    }
+
+    // Send a memory (reqd|write) request TLP with a nettlp header
+    fn send_mr(
+        &self,
+        addr: u64,
+        len: usize,
+        t: tlp::TlpType,
+        data: Option<&[u8]>,
+    ) -> Result<(), Error> {
         let nh = NetTlpHdr::new();
-        let t = tlp::TlpType::Mrd;
         let mut packet = bytes::BytesMut::new();
 
+        // NetTLP header
         packet.extend_from_slice(nh.as_bytes());
 
+        // TLP header
         // Separte function calls are necessary to expolit generics
         if addr <= u32::MAX as u64 {
             let mh = tlp::TlpMrHdr::new(t, self.requester, self.tag, addr as u32, len);
@@ -158,6 +173,11 @@ impl NetTlp {
             let mh = tlp::TlpMrHdr::new(t, self.requester, self.tag, addr, len);
             packet.extend_from_slice(mh.as_bytes());
         };
+
+        // Append data if any
+        if let Some(data) = data {
+            packet.extend_from_slice(data.as_bytes());
+        }
 
         self.socket.send(&packet)?;
         Ok(())
@@ -254,12 +274,41 @@ impl NetTlp {
         Ok(())
     }
 
-    /*
     /// DMA write
-    pub fn dma_write(&self, addr: usize, buf: &mut [u8]) -> Result<(), Error> {
-        unimplemented!();
+    pub fn dma_write(&self, addr: u64, buf: &[u8]) -> Result<(), Error> {
+        assert!(
+            addr & 0x3 == 0 && buf.len() % 4 == 0,
+            "non DW-aligned requests are not implemented"
+        );
+        let total_len = buf.len();
+        let mut p = addr;
+        let mut sent = 0;
+        loop {
+            let remain = total_len - sent;
+            let max_len = 0x1000 - (p & 0xFFF) as usize;
+            use std::cmp::min;
+            let len = min(min(remain, self.mrrs), max_len);
+            let end = sent + len;
+
+            self.send_mwr(p, len, &buf[sent..end])?;
+
+            sent += len;
+            p += len as u64;
+            if sent >= total_len {
+                break;
+            }
+        }
+        Ok(())
     }
-    */
+
+    /// Write `T` in a memory `addr`
+    pub fn dma_write_t<T: Sized + AsBytes>(&self, addr: u64, t: T) -> Result<(), Error> {
+        let ptr = (&t as *const T) as *const u8;
+        let len = std::mem::size_of::<T>();
+        let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
+        self.dma_write(addr, slice)?;
+        Ok(())
+    }
 }
 
 // for debug
