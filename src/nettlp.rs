@@ -240,7 +240,7 @@ impl NetTlp {
             }
             if size > buf_len {
                 dbg!("BUG: buf is too small", size, buf_len, cpld);
-                return Err(Error::InvalidData(format!("Internal error")));
+                return Err(Error::InvalidData("Internal error".to_string()));
             }
 
             let tmp = &recv_buf[start..end];
