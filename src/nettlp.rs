@@ -91,19 +91,13 @@ impl NetTlp {
     }
 
     /// Read `sizeof(T)` bytes into `t` from a physical addr
-    // FIXME: Remove AsBytes trait bound.
-    // We should create BytesMut with UninitSlice(*) instead of creating u8 slice.
-    // but there is no BytesMut::from(UninitSlice) for now..
-    // (* This is because a padding of a unpacked struct may be uninitialized.)
     pub fn dma_read_t<T: Sized + FromBytes + AsBytes>(
         &self,
         addr: u64,
         t: &mut T,
     ) -> Result<(), Error> {
-        let ptr = (t as *mut T) as *mut u8;
         let len = std::mem::size_of::<T>();
-        let mut slice = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
-        self.dma_read(addr, &mut slice, len)?;
+        self.dma_read(addr, &mut t.as_bytes_mut(), len)?;
         Ok(())
     }
 
@@ -303,10 +297,7 @@ impl NetTlp {
 
     /// Write `T` in a memory `addr`
     pub fn dma_write_t<T: Sized + AsBytes>(&self, addr: u64, t: T) -> Result<(), Error> {
-        let ptr = (&t as *const T) as *const u8;
-        let len = std::mem::size_of::<T>();
-        let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
-        self.dma_write(addr, slice)?;
+        self.dma_write(addr, t.as_bytes())?;
         Ok(())
     }
 }
